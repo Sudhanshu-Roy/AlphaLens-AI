@@ -1,6 +1,6 @@
 import yfinance as yf
 import json
-time
+import time
 from .news_service import (
     get_news
 )
