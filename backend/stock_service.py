@@ -1,16 +1,22 @@
 import os
+import json
 import requests
-from datetime import datetime
-from datetime import timedelta
+
+from news_service import get_news
+
+from llm import ask_llm
+
+from prompts import (
+    build_analysis_prompt,
+    build_chat_prompt
+)
 
 FINNHUB_API_KEY = os.getenv(
     "FINNHUB_API_KEY"
 )
 
 
-def get_stock_data(
-    ticker
-):
+def get_stock_data(ticker):
 
     profile_url = (
         f"https://finnhub.io/api/v1/stock/profile2"
@@ -24,17 +30,13 @@ def get_stock_data(
         f"&token={FINNHUB_API_KEY}"
     )
 
-    profile = (
-        requests
-        .get(profile_url)
-        .json()
-    )
+    profile = requests.get(
+        profile_url
+    ).json()
 
-    quote = (
-        requests
-        .get(quote_url)
-        .json()
-    )
+    quote = requests.get(
+        quote_url
+    ).json()
 
     return {
 
@@ -45,22 +47,30 @@ def get_stock_data(
         ticker,
 
         "sector":
-        profile.get("finnhubIndustry"),
+        profile.get(
+            "finnhubIndustry"
+        ),
 
         "industry":
-        profile.get("finnhubIndustry"),
+        profile.get(
+            "finnhubIndustry"
+        ),
 
         "employees":
         "N/A",
 
         "website":
-        profile.get("weburl"),
+        profile.get(
+            "weburl"
+        ),
 
         "current_price":
         quote.get("c"),
 
         "market_cap":
-        profile.get("marketCapitalization"),
+        profile.get(
+            "marketCapitalization"
+        ),
 
         "pe_ratio":
         "N/A",
@@ -70,12 +80,17 @@ def get_stock_data(
 
         "low_52w":
         "N/A"
-
     }
+
 
 def get_stock_history(
     ticker
 ):
+
+    from datetime import (
+        datetime,
+        timedelta
+    )
 
     end_date = int(
         datetime.now().timestamp()
@@ -97,11 +112,9 @@ def get_stock_history(
         f"&token={FINNHUB_API_KEY}"
     )
 
-    data = (
-        requests
-        .get(url)
-        .json()
-    )
+    data = requests.get(
+        url
+    ).json()
 
     result = []
 
@@ -128,8 +141,98 @@ def get_stock_history(
             .strftime("%Y-%m-%d"),
 
             "close":
-            close
+            round(
+                close,
+                2
+            )
 
         })
 
     return result
+
+
+def analyze_stock(
+    ticker
+):
+
+    stock_data = (
+        get_stock_data(
+            ticker
+        )
+    )
+
+    news = (
+        get_news(
+            ticker
+        )
+    )
+
+    prompt = (
+        build_analysis_prompt(
+            stock_data,
+            news
+        )
+    )
+
+    result = ask_llm(
+        prompt
+    )
+
+    result = (
+        result
+        .replace(
+            "```json",
+            ""
+        )
+        .replace(
+            "```",
+            ""
+        )
+        .strip()
+    )
+
+    return json.loads(
+        result
+    )
+
+
+def chat_with_stock(
+    ticker,
+    question
+):
+
+    stock_data = (
+        get_stock_data(
+            ticker
+        )
+    )
+
+    news = (
+        get_news(
+            ticker
+        )
+    )
+
+    analysis = (
+        analyze_stock(
+            ticker
+        )
+    )
+
+    prompt = (
+        build_chat_prompt(
+            stock_data,
+            news,
+            analysis,
+            question
+        )
+    )
+
+    return {
+
+        "answer":
+        ask_llm(
+            prompt
+        )
+
+    }
