@@ -1,200 +1,84 @@
-import os
+import yfinance as yf
 import json
-import requests
-
-from .news_service import get_news
-
+from .news_service import (
+    get_news
+)
 from .llm import ask_llm
 
 from .prompts import (
-    build_analysis_prompt,
-    build_chat_prompt
+    build_analysis_prompt, build_chat_prompt
 )
-
-FINNHUB_API_KEY = os.getenv(
-    "FINNHUB_API_KEY"
-)
-
 
 def get_stock_data(ticker):
 
-    profile_url = (
-        f"https://finnhub.io/api/v1/stock/profile2"
-        f"?symbol={ticker}"
-        f"&token={FINNHUB_API_KEY}"
-    )
+    stock = yf.Ticker(ticker)
 
-    quote_url = (
-        f"https://finnhub.io/api/v1/quote"
-        f"?symbol={ticker}"
-        f"&token={FINNHUB_API_KEY}"
-    )
-
-    profile = requests.get(
-        profile_url
-    ).json()
-
-    quote = requests.get(
-        quote_url
-    ).json()
+    info = stock.info
 
     return {
+        "name": info.get("longName"),
 
-        "name":
-        profile.get("name"),
+        "symbol": info.get("symbol"),
 
-        "symbol":
-        ticker,
+        "sector": info.get("sector"),
 
-        "sector":
-        profile.get(
-            "finnhubIndustry"
-        ),
+        "industry": info.get("industry"),
 
-        "industry":
-        profile.get(
-            "finnhubIndustry"
-        ),
+        "employees": info.get("fullTimeEmployees"),
 
-        "employees":
-        "N/A",
+        "website": info.get("website"),
 
-        "website":
-        profile.get(
-            "weburl"
-        ),
+        "current_price": info.get("currentPrice"),
 
-        "current_price":
-        quote.get("c"),
+        "market_cap": info.get("marketCap"),
 
-        "market_cap":
-        profile.get(
-            "marketCapitalization"
-        ),
+        "pe_ratio": info.get("trailingPE"),
 
-        "pe_ratio":
-        "N/A",
+        "high_52w": info.get("fiftyTwoWeekHigh"),
 
-        "high_52w":
-        "N/A",
-
-        "low_52w":
-        "N/A"
+        "low_52w": info.get("fiftyTwoWeekLow")
     }
 
+def get_stock_history(ticker):
 
-def get_stock_history(
-    ticker
-):
+    stock = yf.Ticker(ticker)
 
-    from datetime import (
-        datetime,
-        timedelta
+    history = stock.history(
+        period="1y"
     )
 
-    end_date = int(
-        datetime.now().timestamp()
-    )
-
-    start_date = int(
-        (
-            datetime.now()
-            - timedelta(days=365)
-        ).timestamp()
-    )
-
-    url = (
-        f"https://finnhub.io/api/v1/stock/candle"
-        f"?symbol={ticker}"
-        f"&resolution=D"
-        f"&from={start_date}"
-        f"&to={end_date}"
-        f"&token={FINNHUB_API_KEY}"
-    )
-
-    data = requests.get(
-        url
-    ).json()
-
-    result = []
-
-    closes = data.get(
-        "c",
-        []
-    )
-
-    timestamps = data.get(
-        "t",
-        []
-    )
-
-    for ts, close in zip(
-        timestamps,
-        closes
-    ):
-
-        result.append({
-
-            "date":
-            datetime
-            .fromtimestamp(ts)
-            .strftime("%Y-%m-%d"),
-
-            "close":
-            round(
-                close,
+    return [
+        {
+            "date": str(index.date()),
+            "close": round(
+                row["Close"],
                 2
             )
+        }
 
-        })
+        for index, row
+        in history.iterrows()
+    ]
 
-    return result
+def analyze_stock(ticker):
 
+    stock_data = (get_stock_data(ticker))
+    news = (get_news(ticker))
 
-def analyze_stock(
-    ticker
-):
+    prompt = (build_analysis_prompt(stock_data, news))
 
-    stock_data = (
-        get_stock_data(
-            ticker
-        )
-    )
-
-    news = (
-        get_news(
-            ticker
-        )
-    )
-
-    prompt = (
-        build_analysis_prompt(
-            stock_data,
-            news
-        )
-    )
-
-    result = ask_llm(
-        prompt
-    )
+    result = ask_llm(prompt)
 
     result = (
         result
-        .replace(
-            "```json",
-            ""
-        )
-        .replace(
-            "```",
-            ""
-        )
+        .replace("```json", "")
+        .replace("```", "")
         .strip()
     )
 
     return json.loads(
         result
     )
-
 
 def chat_with_stock(
     ticker,
@@ -229,10 +113,6 @@ def chat_with_stock(
     )
 
     return {
-
         "answer":
-        ask_llm(
-            prompt
-        )
-
+        ask_llm(prompt)
     }
