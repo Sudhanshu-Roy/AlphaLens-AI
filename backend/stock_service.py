@@ -2,11 +2,11 @@ import os
 import json
 import requests
 
-from news_service import get_news
+from .news_service import get_news
 
-from llm import ask_llm
+from .llm import ask_llm
 
-from prompts import (
+from .prompts import (
     build_analysis_prompt,
     build_chat_prompt
 )
