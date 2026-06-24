@@ -17,7 +17,7 @@ app.add_middleware(
     CORSMiddleware,
 
     allow_origins=[
-        "http://localhost:5173"
+        "https://alpha-lens-ai-smoky.vercel.app"
     ],
 
     allow_credentials=True,
