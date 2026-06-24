@@ -1,0 +1,8 @@
+Frontend
+Backend
+API Integration
+Prompt Engineering
+LLM Integration
+Live Data Processing
+Financial Analysis
+Deployment Skills
