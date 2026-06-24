@@ -1,9 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from stock_service import (
+from .stock_service import (
     get_stock_data, get_stock_history, analyze_stock, chat_with_stock
 )
-from news_service import (
+from .news_service import (
     get_news
 )
 from pydantic import BaseModel
