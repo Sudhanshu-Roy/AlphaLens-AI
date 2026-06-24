@@ -1,14 +1,11 @@
 import yfinance as yf
 import json
 import time
-from .news_service import (
-    get_news
-)
+from yfinance.exceptions import YFRateLimitError
+from fastapi import HTTPException
+from .news_service import get_news
 from .llm import ask_llm
-
-from .prompts import (
-    build_analysis_prompt, build_chat_prompt
-)
+from .prompts import build_analysis_prompt, build_chat_prompt
 
 CACHE_DURATION = 600
 
@@ -16,267 +13,96 @@ stock_cache = {}
 history_cache = {}
 analysis_cache = {}
 
-def get_cached_data(
-    cache,
-    key
-):
-
+def get_cached_data(cache, key):
     if key in cache:
-
         data, timestamp = cache[key]
-
-        if (
-            time.time()
-            - timestamp
-            < CACHE_DURATION
-        ):
-
-            print(
-                f"Cache HIT: {key}"
-            )
-
+        if time.time() - timestamp < CACHE_DURATION:
             return data
-
     return None
 
-def get_stock_data(
-    ticker
-):
-
-    cached = get_cached_data(
-        stock_cache,
-        ticker
-    )
-
+def get_stock_data(ticker):
+    cached = get_cached_data(stock_cache, ticker)
     if cached:
         return cached
 
-    print(
-    f"Yahoo Request: {ticker}"
-    )
+    try:
+        print(f"Yahoo Request: {ticker}")
+        stock = yf.Ticker(ticker)
+        info = stock.info
+        
+        # Validate that we actually got data back
+        if not info or 'symbol' not in info:
+            raise ValueError("No data found for ticker")
 
-    stock = yf.Ticker(
-        ticker
-    )
-
-    info = stock.info
-
-    data = {
-
-        "name":
-        info.get(
-            "longName"
-        ),
-
-        "symbol":
-        info.get(
-            "symbol"
-        ),
-
-        "sector":
-        info.get(
-            "sector"
-        ),
-
-        "industry":
-        info.get(
-            "industry"
-        ),
-
-        "employees":
-        info.get(
-            "fullTimeEmployees"
-        ),
-
-        "website":
-        info.get(
-            "website"
-        ),
-
-        "current_price":
-        info.get(
-            "currentPrice"
-        ),
-
-        "market_cap":
-        info.get(
-            "marketCap"
-        ),
-
-        "pe_ratio":
-        info.get(
-            "trailingPE"
-        ),
-
-        "high_52w":
-        info.get(
-            "fiftyTwoWeekHigh"
-        ),
-
-        "low_52w":
-        info.get(
-            "fiftyTwoWeekLow"
-        )
-    }
-
-    stock_cache[ticker] = (
-        data,
-        time.time()
-    )
-
-    return data
-
-def get_stock_history(
-    ticker
-):
-
-    cached = get_cached_data(
-        history_cache,
-        ticker
-    )
-
-    if cached:
-        return cached
-
-    print(
-    f"Yahoo Request: {ticker}"
-    )
-    
-    stock = yf.Ticker(
-        ticker
-    )
-
-    history = stock.history(
-        period="1y"
-    )
-
-    data = [
-
-        {
-
-            "date":
-            str(
-                index.date()
-            ),
-
-            "close":
-            round(
-                row["Close"],
-                2
-            )
-
+        data = {
+            "name": info.get("longName"),
+            "symbol": info.get("symbol"),
+            "sector": info.get("sector"),
+            "industry": info.get("industry"),
+            "employees": info.get("fullTimeEmployees"),
+            "website": info.get("website"),
+            "current_price": info.get("currentPrice"),
+            "market_cap": info.get("marketCap"),
+            "pe_ratio": info.get("trailingPE"),
+            "high_52w": info.get("fiftyTwoWeekHigh"),
+            "low_52w": info.get("fiftyTwoWeekLow")
         }
 
-        for index, row
-        in history.iterrows()
+        stock_cache[ticker] = (data, time.time())
+        return data
+    except YFRateLimitError:
+        raise HTTPException(status_code=429, detail="Rate limit exceeded. Please try again in a few minutes.")
+    except Exception as e:
+        print(f"Error fetching stock data: {e}")
+        raise HTTPException(status_code=500, detail=f"Could not fetch stock data: {str(e)}")
 
-    ]
-
-    history_cache[ticker] = (
-        data,
-        time.time()
-    )
-
-    return data
-
-def analyze_stock(
-    ticker
-):
-
-    cached = get_cached_data(
-        analysis_cache,
-        ticker
-    )
-
+def get_stock_history(ticker):
+    cached = get_cached_data(history_cache, ticker)
     if cached:
         return cached
 
-    stock_data = (
-        get_stock_data(
-            ticker
-        )
-    )
+    try:
+        print(f"Yahoo Request History: {ticker}")
+        stock = yf.Ticker(ticker)
+        history = stock.history(period="1y")
+        
+        data = [
+            {"date": str(index.date()), "close": round(row["Close"], 2)}
+            for index, row in history.iterrows()
+        ]
 
-    news = (
-        get_news(
-            ticker
-        )
-    )
+        history_cache[ticker] = (data, time.time())
+        return data
+    except Exception as e:
+        print(f"Error fetching history: {e}")
+        return [] # Return empty list rather than crashing
 
-    prompt = (
-        build_analysis_prompt(
-            stock_data,
-            news
-        )
-    )
+def analyze_stock(ticker):
+    cached = get_cached_data(analysis_cache, ticker)
+    if cached:
+        return cached
 
-    result = (
-        ask_llm(
-            prompt
-        )
-    )
+    # These will raise HTTPExceptions if they fail, which is handled by FastAPI
+    stock_data = get_stock_data(ticker)
+    news = get_news(ticker)
 
-    result = (
-        result
-        .replace(
-            "```json",
-            ""
-        )
-        .replace(
-            "```",
-            ""
-        )
-        .strip()
-    )
+    prompt = build_analysis_prompt(stock_data, news)
+    result = ask_llm(prompt)
 
-    data = json.loads(
-        result
-    )
+    try:
+        result = result.replace("```json", "").replace("```", "").strip()
+        data = json.loads(result)
+        analysis_cache[ticker] = (data, time.time())
+        return data
+    except Exception as e:
+        print(f"Error parsing LLM analysis: {e}")
+        raise HTTPException(status_code=500, detail="Failed to parse analysis.")
 
-    analysis_cache[
-        ticker
-    ] = (
+def chat_with_stock(ticker, question):
+    # This function relies on the others which now have error handling
+    stock_data = get_stock_data(ticker)
+    news = get_news(ticker)
+    analysis = analyze_stock(ticker)
 
-        data,
-        time.time()
-
-    )
-
-    return data
-
-def chat_with_stock(
-    ticker,
-    question
-):
-
-    stock_data = (
-        get_stock_data(
-            ticker
-        )
-    )
-
-    news = (
-        get_news(
-            ticker
-        )
-    )
-
-    analysis = (
-        analyze_stock(
-            ticker
-        )
-    )
-
-    prompt = (
-        build_chat_prompt(
-            stock_data,
-            news,
-            analysis,
-            question
-        )
-    )
-
-    return {
-        "answer":
-        ask_llm(prompt)
-    }
+    prompt = build_chat_prompt(stock_data, news, analysis, question)
+    return {"answer": ask_llm(prompt)}
