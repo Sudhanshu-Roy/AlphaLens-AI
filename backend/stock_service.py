@@ -1,11 +1,11 @@
 import yfinance as yf
 import json
-from news_service import (
+from .news_service import (
     get_news
 )
-from llm import ask_llm
+from .llm import ask_llm
 
-from prompts import (
+from .prompts import (
     build_analysis_prompt, build_chat_prompt
 )
 
