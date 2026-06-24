@@ -13,7 +13,7 @@ def get_stock_data(ticker):
 
     stock = yf.Ticker(ticker)
 
-    info = stock.info
+    info = stock.fast_info
 
     return {
         "name": info.get("longName"),
